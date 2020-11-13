@@ -39,7 +39,7 @@ RUN \
 
 
 # Add pip requirements
-COPY requirements.txt /tmp/requirements.txt
+COPY /requirements.txt /tmp/requirements.txt
 
 
 # Install dependencies.
@@ -64,12 +64,17 @@ RUN \
 
 COPY / /tmp/
 RUN apt-get install git --yes
-RUN cd /tmp/ && python3 ./setup.py bdist_wheel \
+RUN \ 
+    echo "**** Building wheel packages ****" \ 
+    && \
+     cd /tmp/ && python3 ./setup.py bdist_wheel \
                 && cp -R dist/ /src/
 
 RUN cd /src/ && mv unmanic-UNKNOWN-py3-none-any.whl unmanic-1.0.0-py3-none-any.whl
 
-RUN rm -rf /tmp/*
+RUN \
+    echo "**** Cleanup ****" \ 
+    && rm -rf /tmp/*
 
 # Build and install application
 # Must first run `python3 ./setup.py bdist_wheel` to build package
