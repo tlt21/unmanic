@@ -61,11 +61,11 @@ Simply point Unmanic at your library and let it manage it.
 
 #### Desktop:
 
-![Screen-shot - Desktop](docs/images/dashboard-1.png)
+![Screen-shot - Desktop](https://raw.githubusercontent.com/Josh5/unmanic/master/docs/images/dashboard-1.png)
 
 #### Mobile:
 
-![Screen-shot - Mobile](docs/images/dashboard-mobile-1.png)
+![Screen-shot - Mobile](https://raw.githubusercontent.com/Josh5/unmanic/master/docs/images/dashboard-mobile-1.png)
 
 
 ## Install and Run
@@ -106,6 +106,10 @@ python3 ./setup.py install --user
 
 unmanic
 ```
+
+For docker-compose templates, take a look at the templates in the [/docker/](/docker/) directory.
+
+For information on configuration such as enabling hardware acceleration, see the [Configuration Docs](docs/configuration/README.md).
 
 ## License and Contribution
 

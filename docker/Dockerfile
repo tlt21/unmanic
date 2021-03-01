@@ -76,6 +76,17 @@ RUN \
     echo "**** Cleanup ****" \ 
     && rm -rf /tmp/*
 
+# Install NVIDIA Patch
+# REF: https://github.com/keylase/nvidia-patch#docker-support
+ARG NVIDIA_PATCH_VERSION='cca1ab1'
+RUN \
+    echo "**** Fetch NVIDIA Patch ****" \
+        && curl -sSLf \
+            -o /usr/local/bin/patch.sh \
+            "https://raw.githubusercontent.com/keylase/nvidia-patch/${NVIDIA_PATCH_VERSION}/patch.sh" \
+        && chmod +x /usr/local/bin/patch.sh
+
+
 # Build and install application
 # Must first run `python3 ./setup.py bdist_wheel` to build package
 # COPY /dist/      /src/
