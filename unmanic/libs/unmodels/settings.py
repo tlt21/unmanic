@@ -34,7 +34,9 @@ import os
 from peewee import *
 from unmanic.libs.unmodels.basemodel import BaseModel
 
-HOME_DIR = os.path.expanduser("~")
+HOME_DIR = os.environ.get('HOME_DIR')
+if HOME_DIR is None:
+    HOME_DIR = os.path.expanduser("~")
 
 
 class Settings(BaseModel):
@@ -69,3 +71,4 @@ class Settings(BaseModel):
     video_stream_encoder = TextField(null=False, default='libx265')
     overwrite_additional_ffmpeg_options = BooleanField(null=False, default=False)
     additional_ffmpeg_options = TextField(null=True, default='')
+    enable_hardware_accelerated_decoding = BooleanField(null=False, default=False)

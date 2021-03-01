@@ -2,10 +2,10 @@ name: Build All Packages CI
 
 on:
   push:
-    branches: [ 'dev-**', 'pr-**', master ]
+    branches: [ 'dev-**', 'pr-**', staging, master ]
     tags: [ '**' ]
   pull_request:
-    branches: [ master ]
+    branches: [ staging, master ]
 
 jobs:
 
@@ -135,7 +135,7 @@ jobs:
         python ./setup.py  --quiet --version
         echo "Long version:"
         python ./setup.py  --quiet fullversion
-        python ./setup.py bdist_wheel
+        python ./setup.py sdist bdist_wheel
 
     # Read the python package distribution data (save version to file)
     - name: Read python package distribution data
@@ -219,6 +219,8 @@ jobs:
         DOCKER_TAGS=""
         if [[ ${VERSION_TAG%/merge} == 'master' ]]; then
           DOCKER_TAGS="${DOCKER_TAGS} --tag ${DOCKER_IMAGE}:latest"
+        elif [[ ${VERSION_TAG%/merge} == 'staging' ]]; then
+          DOCKER_TAGS="${DOCKER_TAGS} --tag ${DOCKER_IMAGE}:staging"
         elif [[ ${VERSION_TAG%/merge} =~ "dev-"* ]]; then
           DOCKER_TAGS="${DOCKER_TAGS} --tag ${DOCKER_IMAGE}:${VERSION_TAG%/merge}"
         fi
@@ -260,9 +262,43 @@ jobs:
       run: |
         echo  "Platform targets: ${{ steps.buildx.outputs.docker_platforms }}"
         docker buildx build \
+          --pull \
           --cache-from "type=local,src=/tmp/.buildx-cache" \
           --cache-to "type=local,dest=/tmp/.buildx-cache" \
           --output type=image,name=${{ steps.prepare.outputs.docker_image }},push=${{ steps.prepare.outputs.docker_push }} \
           --platform ${{ steps.prepare.outputs.docker_platforms }} \
           ${{ steps.prepare.outputs.docker_tags }} \
           --file docker/Dockerfile .
+
+  build_pypi:
+
+    name: Publish package to PyPI
+    needs: py_build
+    runs-on: ubuntu-latest
+
+    steps:
+    # Fetch shallow git repository
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    # Fetch all artifacts
+    - name: Download Artifact
+      uses: actions/download-artifact@v2
+      with:
+        path: ./artifacts/
+
+    # Restore python package distribution data
+    - name: Restore python package distribution data
+      id: py_build_data
+      run: |
+        mkdir -p ./dist
+        find ./artifacts/ -type f -name "*.whl" -exec cp -n {} ./dist/ \;
+        find ./artifacts/ -type f -name "*.tar.gz" -exec cp -n {} ./dist/ \;
+        ls -l ./dist/
+
+    # Push the artifacts to PyPI repo
+    - name: Publish distribution package to PyPI
+      if: github.ref == 'refs/heads/master'
+      uses: pypa/gh-action-pypi-publish@master
+      with:
+        password: ${{ secrets.PYPI_TOKEN }}

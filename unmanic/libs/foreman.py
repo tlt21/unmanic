@@ -144,6 +144,7 @@ class WorkerThread(threading.Thread):
             'video_stream_encoder':                 self.current_task.settings.video_stream_encoder,
             'overwrite_additional_ffmpeg_options':  self.current_task.settings.overwrite_additional_ffmpeg_options,
             'additional_ffmpeg_options':            self.current_task.settings.additional_ffmpeg_options,
+            'enable_hardware_accelerated_decoding': self.current_task.settings.enable_hardware_accelerated_decoding,
         }
         self.ffmpeg = ffmpeg.FFMPEGHandle(settings)
         self.ffmpeg_log = None
@@ -168,9 +169,9 @@ class WorkerThread(threading.Thread):
             if not file_probe:
                 return False
             # Create args from
-            ffmpeg_args = self.ffmpeg.generate_ffmpeg_args(file_probe)
+            ffmpeg_args = self.ffmpeg.generate_ffmpeg_args(file_probe, abspath, self.current_task.task.cache_path)
             if ffmpeg_args:
-                success = self.ffmpeg.convert_file_and_fetch_progress(abspath, self.current_task.task.cache_path, ffmpeg_args)
+                success = self.ffmpeg.convert_file_and_fetch_progress(abspath, ffmpeg_args)
             self.current_task.set_ffmpeg_log(self.ffmpeg.ffmpeg_cmd_stdout)
 
         except ffmpeg.FFMPEGHandleConversionError as e:
@@ -318,9 +319,10 @@ class Foreman(threading.Thread):
                               level="exception")
 
             # First setup the correct number of workers
-            self.init_worker_threads()
+            if not self.abort_flag.is_set():
+                self.init_worker_threads()
 
-            if not self.task_queue.task_list_pending_is_empty():
+            if not self.abort_flag.is_set() and not self.task_queue.task_list_pending_is_empty():
                 time.sleep(.2)
 
                 # Check if there are any free workers

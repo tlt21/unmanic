@@ -17,7 +17,7 @@
            copies of the Software, and to permit persons to whom the Software is
            furnished to do so, subject to the following conditions:
 
-           The above copyright notice and this permission notice shall be includeed in all
+           The above copyright notice and this permission notice shall be included in all
            copies or substantial portions of the Software.
 
            THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND,
@@ -86,6 +86,7 @@ class LibraryScanner(threading.Thread):
             'video_stream_encoder':                 self.settings.VIDEO_STREAM_ENCODER,
             'overwrite_additional_ffmpeg_options':  self.settings.OVERWRITE_ADDITIONAL_FFMPEG_OPTIONS,
             'additional_ffmpeg_options':            self.settings.ADDITIONAL_FFMPEG_OPTIONS,
+            'enable_hardware_accelerated_decoding': self.settings.ENABLE_HARDWARE_ACCELERATED_DECODING,
         }
 
     def stop(self):
@@ -147,7 +148,7 @@ class LibraryScanner(threading.Thread):
     def get_convert_files(self, search_folder):
         if self.settings.DEBUGGING:
             self._log("Scanning directory - '{}'".format(search_folder), level="debug")
-        for root, subFolders, files in os.walk(search_folder):
+        for root, subFolders, files in os.walk(search_folder, followlinks=True):
             if self.settings.DEBUGGING:
                 self._log(json.dumps(files, indent=2), level="debug")
             # Add all files in this path that match our container filter
@@ -195,6 +196,7 @@ class EventProcessor(pyinotify.ProcessEvent):
             'video_stream_encoder':                 self.settings.VIDEO_STREAM_ENCODER,
             'overwrite_additional_ffmpeg_options':  self.settings.OVERWRITE_ADDITIONAL_FFMPEG_OPTIONS,
             'additional_ffmpeg_options':            self.settings.ADDITIONAL_FFMPEG_OPTIONS,
+            'enable_hardware_accelerated_decoding': self.settings.ENABLE_HARDWARE_ACCELERATED_DECODING,
         }
 
     def inotify_enabled(self):
@@ -331,7 +333,7 @@ class Service:
         main_logger.info("SIGTERM Received")
         self.run_threads = False
 
-    def run(self):
+    def start_threads(self):
         # Read settings
         settings = config.CONFIG()
 
@@ -344,7 +346,10 @@ class Service:
         }
 
         # Clear cache directory
+        main_logger.info("Clearing previous cache")
         common.clean_files_in_dir(settings.CACHE_PATH)
+
+        main_logger.info("Starting all threads")
 
         # Setup job queue
         task_queue = TaskQueue(settings, data_queues)
@@ -367,6 +372,21 @@ class Service:
         # Start inotify watch manager
         self.start_inotify_watch_manager(data_queues, settings)
 
+    def stop_threads(self):
+        main_logger.info("Stopping all threads")
+        for thread in self.threads:
+            main_logger.info("Sending thread {} abort signal".format(thread['name']))
+            thread['thread'].stop()
+        for thread in self.threads:
+            main_logger.info("Waiting for thread {} to stop".format(thread['name']))
+            thread['thread'].join()
+            main_logger.info("Thread {} has successfully stopped".format(thread['name']))
+        self.threads = []
+
+    def run(self):
+        # Start all threads
+        self.start_threads()
+
         # Watch for the term signal
         signal.signal(signal.SIGINT, self.sig_handle)
         signal.signal(signal.SIGTERM, self.sig_handle)
@@ -374,12 +394,7 @@ class Service:
             signal.pause()
 
         # Received term signal. Stop everything
-        main_logger.info("Stopping all threads")
-        for thread in self.threads:
-            main_logger.info("Sending thread {} abort signal".format(thread['name']))
-            thread['thread'].stop()
-            main_logger.info("Waiting for thread {} to stop".format(thread['name']))
-            thread['thread'].join()
+        self.stop_threads()
         main_logger.info("Exit Unmanic")
 
 

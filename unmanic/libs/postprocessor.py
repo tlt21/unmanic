@@ -108,6 +108,7 @@ class PostProcessor(threading.Thread):
             'video_stream_encoder':                 self.current_task.settings.video_stream_encoder,
             'overwrite_additional_ffmpeg_options':  self.current_task.settings.overwrite_additional_ffmpeg_options,
             'additional_ffmpeg_options':            self.current_task.settings.additional_ffmpeg_options,
+            'enable_hardware_accelerated_decoding': self.current_task.settings.enable_hardware_accelerated_decoding,
         }
         self.ffmpeg = ffmpeg.FFMPEGHandle(settings)
 
@@ -186,19 +187,20 @@ class PostProcessor(threading.Thread):
             self._log("Exception in method process_file", str(e), level='exception')
             return False
 
-        result = True
+        result = False
         for stream in file_probe['streams']:
             if stream['codec_type'] == 'video':
                 if self.settings.ENABLE_VIDEO_ENCODING:
                     # Check if this file is the right codec
                     if stream['codec_name'] == self.settings.VIDEO_CODEC:
+                        result = True
                         continue
                     elif self.settings.DEBUGGING:
-                        self._log("File is the not correct codec {} - {}".format(self.settings.VIDEO_CODEC, abspath))
+                        self._log("File is the not correct codec {} - {} :: {}".format(self.settings.VIDEO_CODEC, abspath,
+                                                                                       stream['codec_name']))
                         # TODO: If settings are modified during a conversion, the file being converted should not fail.
                         #  Modify ffmpeg.py to have settings passed to it rather than reading directly from the config object
                         #  Test against the task's configured video codec
-                        result = False
                     # TODO: Test duration is the same as src
                     # TODO: Add file checksum from before and after move
 

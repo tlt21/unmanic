@@ -175,13 +175,14 @@ def generate_example_ffmpeg_args(config):
         'video_stream_encoder':                 config.VIDEO_STREAM_ENCODER,
         'overwrite_additional_ffmpeg_options':  config.OVERWRITE_ADDITIONAL_FFMPEG_OPTIONS,
         'additional_ffmpeg_options':            config.ADDITIONAL_FFMPEG_OPTIONS,
+        'enable_hardware_accelerated_decoding': config.ENABLE_HARDWARE_ACCELERATED_DECODING,
     }
 
     # Create ffmpeg object
     ffmpeg_obj = ffmpeg.FFMPEGHandle(settings)
 
     # Create commandline args from ffmpeg object
-    ffmpeg_args = ffmpeg_obj.generate_ffmpeg_args(dummy_probe)
+    ffmpeg_args = ffmpeg_obj.generate_ffmpeg_args(dummy_probe, '/path/to/input/video.mkv', '/path/to/output/video.mkv')
 
     # Return args
     return ffmpeg_args

@@ -231,7 +231,6 @@ class FFMPEGHandle(object):
         :param settings:
         :return:
         """
-        
         # Read the file's properties
         try:
             if not self.file_in and not self.set_file_in(vid_file_path):
@@ -271,8 +270,9 @@ class FFMPEGHandle(object):
                     correct_extension = True
 
             # If this is not in the correct extension, then log it. This file may be added to the conversion list
-            self._log("Current file format names do not match the configured extension {}".format(container_extension),
-                      level='debug')
+            if not correct_extension:
+                self._log("Current file format names do not match the configured extension {}".format(container_extension),
+                          level='debug')
         except Exception as e:
             self._log("Exception in method check_file_to_be_processed. check file container", str(e), level='exception')
             # Failed to fetch properties
@@ -288,7 +288,10 @@ class FFMPEGHandle(object):
                 for stream in file_probe['streams']:
                     if stream['codec_type'] == 'video':
                         # Check if this file is already the right format
-                        video_streams_codecs += "{},{}".format(video_streams_codecs, stream['codec_name'])
+                        if video_streams_codecs:
+                            video_streams_codecs += "{},{}".format(video_streams_codecs, stream['codec_name'])
+                        else:
+                            video_streams_codecs += "{}".format(stream['codec_name'])
                         if stream['codec_name'] == settings['video_codec']:
                             self._log(
                                 "File already has {} codec video stream - {}".format(settings['video_codec'], vid_file_path),
@@ -308,30 +311,31 @@ class FFMPEGHandle(object):
             correct_video_codec = True
 
         correct_audio_codec = False
-        if self.settings.ENABLE_AUDIO_ENCODING:
+        if settings['enable_audio_encoding']:
             try:
                 audio_streams_codecs = ""
                 for stream in file_probe['streams']:
                     if stream['codec_type'] == 'audio':
                         # Check if this file is already the right format
-                        audio_streams_codecs += "{},{}".format(audio_streams_codecs, stream['codec_name'])
-                        if stream['codec_name'] == self.settings.AUDIO_CODEC:
-                            if self.settings.DEBUGGING:
-                                self._log("File already has {} codec audio stream - {}".format(self.settings.AUDIO_CODEC, vid_file_path),
-                                          level='debug')
+                        if audio_streams_codecs:
+                            audio_streams_codecs += "{},{}".format(audio_streams_codecs, stream['codec_name'])
+                        else:
+                            audio_streams_codecs += "{}".format(stream['codec_name'])
+                        if stream['codec_name'] == settings['audio_codec']:
+                            self._log(
+                                "File already has {} codec audio stream - {}".format(settings['audio_codec'], vid_file_path),
+                                level='debug')
                             correct_audio_codec = True
                 if not correct_audio_codec:
-                    if self.settings.DEBUGGING:
-                        self._log(
-                            "The current file's audio streams ({}) do not match the configured audio codec ({})".format(
-                                audio_streams_codecs, self.settings.AUDIO_CODEC), level='debug')
+                    self._log(
+                        "The current file's audio streams ({}) do not match the configured audio codec ({})".format(
+                            audio_streams_codecs, settings['audio_codec']), level='debug')
             except Exception as e:
                 # Failed to fetch properties
                 self._log("Exception in method check_file_to_be_processed. Check audio codec.", str(e),
                           level='exception')
-                if self.settings.DEBUGGING:
-                    self._log("Failed to read codec info of file {}".format(vid_file_path), level='debug')
-                    self._log("Marking file not to be processed", level='debug')
+                self._log("Failed to read codec info of file {}".format(vid_file_path), level='debug')
+                self._log("Marking file not to be processed", level='debug')
                 return False
         else:
             correct_audio_codec = True
@@ -396,9 +400,9 @@ class FFMPEGHandle(object):
         print(file_probe)
         if not file_probe:
             return False
-        ffmpeg_args = self.generate_ffmpeg_args(file_probe)
+        ffmpeg_args = self.generate_ffmpeg_args(file_probe, src_path, out_path)
         if ffmpeg_args:
-            success = self.convert_file_and_fetch_progress(src_path, out_path, ffmpeg_args)
+            success = self.convert_file_and_fetch_progress(src_path, ffmpeg_args)
         if success:
             # Move file back to original folder and remove source
             success = self.post_process_file(out_path)
@@ -430,7 +434,7 @@ class FFMPEGHandle(object):
         self._log("Successfully processed file '{}'".format(src_path))
         return True
 
-    def generate_ffmpeg_args(self, file_probe):
+    def generate_ffmpeg_args(self, file_probe, in_file, out_file):
         # ffmpeg -i /library/XXXXX.mkv \
         #     -c:v libx265 \
         #     -map 0:0 -map 0:1 -map 0:1 \
@@ -445,11 +449,37 @@ class FFMPEGHandle(object):
         # Suppress printing banner. (-hide_banner)
         # Set loglevel to info ("-loglevel", "info")
         # Allow experimental encoder config ("-strict", "-2")
-        # Fix issue - 'Too many packets buffered for output stream 0:1' ("-max_muxing_queue_siz", "512") [https://trac.ffmpeg.org/ticket/6375]
+        # Fix issue - 'Too many packets buffered for output stream 0:1' ("-max_muxing_queue_siz", "512")
+        #       REF: [https://trac.ffmpeg.org/ticket/6375]
         #
         default_ffmpeg_options = ["-hide_banner", "-loglevel", "info", "-strict", "-2", "-max_muxing_queue_size", "512"]
         additional_ffmpeg_options = []
         command = []
+
+        # Hardware acceleration args
+        hardware_acceleration = unffmpeg.HardwareAccelerationHandle(file_probe)
+        hardware_acceleration.video_encoder = self.settings['video_stream_encoder']
+        # Check if hardware decoding is enabled
+        if self.settings['enable_hardware_accelerated_decoding']:
+            # Loop over available decoders...
+            for hardware_decoder in hardware_acceleration.get_decoders():
+                # Just select the first one in the list.
+                # TODO: in the future perhaps add a feature to be able to select which decoder to use.
+
+                # First select the first one in the list
+                if hardware_acceleration.hardware_decoder is None:
+                    hardware_acceleration.hardware_decoder = hardware_decoder
+
+                # If we have enabled a HW accelerated encoder, then attempt to match the decoder with it.
+                hwaccel = hardware_acceleration.hardware_decoder.get('hwaccel')
+                if "vaapi" in self.settings['video_stream_encoder'] and hwaccel == "vaapi":
+                    hardware_acceleration.hardware_decoder = hardware_decoder
+                    break
+                elif "nvenc" in self.settings['video_stream_encoder'] and hwaccel == "cuda":
+                    hardware_acceleration.hardware_decoder = hardware_decoder
+                    break
+                continue
+        hardware_acceleration_args = hardware_acceleration.args()
 
         # Read stream data
         streams_to_map = []
@@ -497,6 +527,12 @@ class FFMPEGHandle(object):
         else:
             additional_ffmpeg_options = default_ffmpeg_options
 
+        # Add decoder args to command
+        command = command + hardware_acceleration_args
+
+        # Add input file
+        command = command + ['-i', in_file]
+
         # Add encoder args to command
         command = command + additional_ffmpeg_options
 
@@ -506,11 +542,14 @@ class FFMPEGHandle(object):
         # Add arguments for creating streams
         command = command + streams_to_encode
 
+        # Add output file
+        command = command + ['-y', out_file]
+
         self._log(" ".join(command), level='debug')
 
         return command
 
-    def convert_file_and_fetch_progress(self, infile, outfile, args):
+    def convert_file_and_fetch_progress(self, infile, args):
         if not self.file_in['file_probe']:
             try:
                 self.file_in['file_probe'] = self.file_probe(infile)
@@ -522,7 +561,7 @@ class FFMPEGHandle(object):
                 return False
 
         # Create command with infile, outfile and the arguments
-        command = ['ffmpeg', '-i', infile] + args + ['-y', outfile]
+        command = ['ffmpeg'] + args
         self._log("Executing: {}".format(' '.join(command)), level='debug')
 
         # Log the start time
